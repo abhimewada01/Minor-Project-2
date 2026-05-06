@@ -1,6 +1,6 @@
-const { Medicine } = require('../models');
-const { Op } = require('sequelize');
-const axios = require('axios');
+import { Medicine } from '../models/index.js';
+import { Op } from 'sequelize';
+import axios from 'axios';
 
 // Currency conversion function
 const convertToINR = async (usdAmount) => {
@@ -20,7 +20,7 @@ const convertToINR = async (usdAmount) => {
 };
 
 // Create Medicine
-exports.createMedicine = async (req, res) => {
+export const createMedicine = async (req, res) => {
   try {
     const { name, category, stock, min_stock, price_usd, expiry_date, supplier } = req.body;
     
@@ -54,7 +54,7 @@ exports.createMedicine = async (req, res) => {
 };
 
 // Get All Medicines
-exports.getAllMedicines = async (req, res) => {
+export const getAllMedicines = async (req, res) => {
   try {
     const { page = 1, limit = 50, category, search } = req.query;
     const offset = (page - 1) * limit;
@@ -99,7 +99,7 @@ exports.getAllMedicines = async (req, res) => {
 };
 
 // Get Medicine by ID
-exports.getMedicineById = async (req, res) => {
+export const getMedicineById = async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -127,7 +127,7 @@ exports.getMedicineById = async (req, res) => {
 };
 
 // Update Medicine
-exports.updateMedicine = async (req, res) => {
+export const updateMedicine = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -164,7 +164,7 @@ exports.updateMedicine = async (req, res) => {
 };
 
 // Delete Medicine
-exports.deleteMedicine = async (req, res) => {
+export const deleteMedicine = async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -194,7 +194,7 @@ exports.deleteMedicine = async (req, res) => {
 };
 
 // Get Low Stock Medicines
-exports.getLowStockMedicines = async (req, res) => {
+export const getLowStockMedicines = async (req, res) => {
   try {
     const lowStockMedicines = await Medicine.findAll({
       where: {
@@ -221,7 +221,7 @@ exports.getLowStockMedicines = async (req, res) => {
 };
 
 // Get Expiring Soon Medicines
-exports.getExpiringSoonMedicines = async (req, res) => {
+export const getExpiringSoonMedicines = async (req, res) => {
   try {
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);

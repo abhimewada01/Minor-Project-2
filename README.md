@@ -1,8 +1,7 @@
 
   # Smart Medical Management Dashboard
 
-  This is a code bundle for Smart Medical Management Dashboard. The original project is available at https://www.figma.com/design/EhgIItREVQhboq33RtNdrz/Smart-Medical-Management-Dashboard.
-
+  This is a code bundle for Smart Medical Management Dashboard. 
   ## Running the code
 
   Run `npm i` to install the dependencies.

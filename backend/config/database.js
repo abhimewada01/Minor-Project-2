@@ -1,6 +1,6 @@
-const mysql = require('mysql2/promise');
-const { Sequelize } = require('sequelize');
-require('dotenv').config();
+import mysql from 'mysql2/promise';
+import { Sequelize } from 'sequelize';
+import 'dotenv/config';
 
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
@@ -26,4 +26,4 @@ const sequelize = new Sequelize(dbConfig.database, dbConfig.user, dbConfig.passw
   pool: dbConfig.pool
 });
 
-module.exports = { sequelize, mysql };
+export { sequelize, mysql };

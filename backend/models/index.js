@@ -1,5 +1,5 @@
-const { sequelize } = require('../config/database');
-const { DataTypes } = require('sequelize');
+import { sequelize } from '../config/database.js';
+import { DataTypes } from 'sequelize';
 
 // Define Medicine Model
 const Medicine = sequelize.define('Medicine', {
@@ -79,6 +79,7 @@ const Medicine = sequelize.define('Medicine', {
     allowNull: false,
     defaultValue: 'Good'
   }
+
 }, {
   tableName: 'medicines',
   timestamps: true,
@@ -206,7 +207,7 @@ const Session = sequelize.define('Session', {
 Session.belongsTo(User, { foreignKey: 'user_id' });
 User.hasMany(Session, { foreignKey: 'user_id' });
 
-module.exports = {
+export {
   sequelize,
   Medicine,
   User,

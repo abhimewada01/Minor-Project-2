@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Plus, Trash2, FileText, Upload, Receipt, MessageCircle, Mail, Smartphone } from 'lucide-react';
+import { Plus, Trash2, FileText, Upload, Receipt, MessageCircle, Mail, Smartphone, Search, ChevronDown } from 'lucide-react';
 import { Separator } from '../components/ui/separator';
 
 interface BillItem {
@@ -14,44 +14,95 @@ interface BillItem {
   total: number;
 }
 
-const availableMedicines = [
-  { name: 'Paracetamol 500mg', price: 207.50 },
-  { name: 'Amoxicillin 250mg', price: 415.00 },
-  { name: 'Ibuprofen 400mg', price: 290.50 },
-  { name: 'Vitamin D3 1000IU', price: 664.00 },
-  { name: 'Omeprazole 20mg', price: 373.50 },
-  { name: 'Aspirin 75mg', price: 124.50 },
-  { name: 'Metformin 500mg', price: 498.00 },
-  { name: 'Cetirizine 10mg', price: 166.00 },
+interface Medicine {
+  id: string;
+  name: string;
+  price: number;
+}
+
+const availableMedicines: Medicine[] = [
+  { id: 'med1', name: 'Paracetamol 500mg', price: 207.50 },
+  { id: 'med2', name: 'Amoxicillin 250mg', price: 415.00 },
+  { id: 'med3', name: 'Ibuprofen 400mg', price: 290.50 },
+  { id: 'med4', name: 'Vitamin D3 1000IU', price: 664.00 },
+  { id: 'med5', name: 'Omeprazole 20mg', price: 373.50 },
+  { id: 'med6', name: 'Aspirin 75mg', price: 124.50 },
+  { id: 'med7', name: 'Metformin 500mg', price: 498.00 },
+  { id: 'med8', name: 'Cetirizine 10mg', price: 166.00 },
 ];
 
 export function Billing() {
   const [billItems, setBillItems] = useState<BillItem[]>([]);
   const [patientName, setPatientName] = useState('');
   const [patientContact, setPatientContact] = useState('');
-  const [selectedMedicine, setSelectedMedicine] = useState('');
+  const [selectedMedicine, setSelectedMedicine] = useState<Medicine | null>(null);
+  const [medicineSearch, setMedicineSearch] = useState('');
+  const [showMedicineDropdown, setShowMedicineDropdown] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [discount, setDiscount] = useState(0);
   const [prescriptionFile, setPrescriptionFile] = useState<string | null>(null);
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
 
+  // Filter medicines based on search
+  const filteredMedicines = useMemo(() => {
+    if (!medicineSearch) return availableMedicines;
+    return availableMedicines.filter(med => 
+      med.name.toLowerCase().includes(medicineSearch.toLowerCase())
+    );
+  }, [medicineSearch]);
+
+  // Handle medicine selection
+  const handleMedicineSelect = (medicine: Medicine) => {
+    setSelectedMedicine(medicine);
+    setMedicineSearch(medicine.name);
+    setShowMedicineDropdown(false);
+  };
+
+  // Handle input change
+  const handleMedicineInputChange = (value: string) => {
+    setMedicineSearch(value);
+    // Only clear selection if user is typing new search
+    if (value !== selectedMedicine?.name) {
+      setSelectedMedicine(null);
+    }
+    setShowMedicineDropdown(true);
+  };
+
+  // Handle input focus
+  const handleMedicineInputFocus = () => {
+    setShowMedicineDropdown(true);
+  };
+
+  // Handle input blur with longer delay to allow click
+  const handleMedicineInputBlur = () => {
+    setTimeout(() => setShowMedicineDropdown(false), 150);
+  };
+
+  // Prevent dropdown close on click
+  const handleDropdownMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+  };
+
+  // Handle click outside dropdown
+  const handleDropdownClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
+
   const handleAddItem = () => {
     if (!selectedMedicine) return;
     
-    const medicine = availableMedicines.find(m => m.name === selectedMedicine);
-    if (!medicine) return;
-
     const newItem: BillItem = {
       id: Date.now(),
-      medicineName: medicine.name,
+      medicineName: selectedMedicine.name,
       quantity: quantity,
-      price: medicine.price,
-      total: medicine.price * quantity,
+      price: selectedMedicine.price,
+      total: selectedMedicine.price * quantity,
     };
 
     setBillItems([...billItems, newItem]);
-    setSelectedMedicine('');
+    setSelectedMedicine(null);
+    setMedicineSearch('');
     setQuantity(1);
   };
 
@@ -91,7 +142,7 @@ export function Billing() {
       billNumber,
       date: billDate,
       patientName,
-      patientPhone: patientPhone,
+      patientPhone: patientContact,
       items: billItems.map(item => ({
         medicineName: item.medicineName,
         quantity: item.quantity,
@@ -111,13 +162,15 @@ export function Billing() {
     // Reset form
     setBillItems([]);
     setPatientName('');
-    setPatientPhone('');
+    setPatientContact('');
     setDiscount(0);
     setPrescriptionFile(null);
+    setMedicineSearch('');
+    setSelectedMedicine(null);
   };
 
   const sendBillViaWhatsApp = async () => {
-    if (!patientName || !patientPhone || billItems.length === 0) {
+    if (!patientName || !patientContact || billItems.length === 0) {
       alert('Please add patient name, phone number, and at least one medicine before sending via WhatsApp');
       return;
     }
@@ -134,7 +187,7 @@ export function Billing() {
         billNumber: `INV-${Date.now().toString().slice(-6)}`,
         date: new Date().toISOString().split('T')[0],
         patientName,
-        patientPhone: patientPhone,
+        patientPhone: patientContact,
         items: billItems.map(item => ({
           medicineName: item.medicineName,
           quantity: item.quantity,
@@ -156,21 +209,23 @@ export function Billing() {
         },
         body: JSON.stringify({
           billData,
-          patientPhone: patientPhone
+          patientPhone: patientContact
         })
       });
       
       const result = await response.json();
       
       if (result.success) {
-        alert(`Bill sent successfully via WhatsApp to ${patientPhone}!\nMessage ID: ${result.data.messageId}`);
+        alert(`Bill sent successfully via WhatsApp to ${patientContact}!\nMessage ID: ${result.data.messageId}`);
         
         // Reset form after successful send
         setBillItems([]);
         setPatientName('');
-        setPatientPhone('');
+        setPatientContact('');
         setDiscount(0);
         setPrescriptionFile(null);
+        setMedicineSearch('');
+        setSelectedMedicine(null);
       } else {
         alert(`Failed to send bill via WhatsApp: ${result.error}`);
       }
@@ -183,7 +238,7 @@ export function Billing() {
   };
 
   const sendBillViaEmail = async () => {
-    if (!patientName || !patientPhone || billItems.length === 0) {
+    if (!patientName || !patientContact || billItems.length === 0) {
       alert('Please add patient name, email, and at least one medicine before sending via email');
       return;
     }
@@ -200,7 +255,7 @@ export function Billing() {
         billNumber: `INV-${Date.now().toString().slice(-6)}`,
         date: new Date().toISOString().split('T')[0],
         patientName,
-        patientPhone: patientPhone,
+        patientPhone: patientContact,
         items: billItems.map(item => ({
           medicineName: item.medicineName,
           quantity: item.quantity,
@@ -222,14 +277,14 @@ export function Billing() {
         },
         body: JSON.stringify({
           billData,
-          patientEmail: patientPhone
+          patientEmail: patientContact
         })
       });
       
       const result = await response.json();
       
       if (result.success) {
-        alert(`Bill email content generated for ${patientPhone}!\nBill Number: ${billData.billNumber}`);
+        alert(`Bill email content generated for ${patientContact}!\nBill Number: ${billData.billNumber}`);
       } else {
         alert(`Failed to generate email bill: ${result.error}`);
       }
@@ -309,20 +364,57 @@ export function Billing() {
             <h3 className="font-semibold text-gray-800 mb-4">Add Medicines</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="medicine">Select Medicine</Label>
-                <select 
-                  id="medicine"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  value={selectedMedicine}
-                  onChange={(e) => setSelectedMedicine(e.target.value)}
-                >
-                  <option value="">Select a medicine</option>
-                  {availableMedicines.map((med) => (
-                    <option key={med.name} value={med.name}>
-                      {med.name} - ₹{med.price.toFixed(2)}
-                    </option>
-                  ))}
-                </select>
+                <Label htmlFor="medicine">Search Medicine</Label>
+                <div className="relative">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <Input 
+                      id="medicine"
+                      placeholder="Search medicine..."
+                      value={selectedMedicine ? selectedMedicine.name : medicineSearch}
+                      onChange={(e) => handleMedicineInputChange(e.target.value)}
+                      onFocus={handleMedicineInputFocus}
+                      onBlur={handleMedicineInputBlur}
+                      className="pl-10 pr-10"
+                    />
+                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+                  </div>
+                  
+                  {/* Dropdown for search results */}
+                  {showMedicineDropdown && filteredMedicines.length > 0 && (
+                    <div 
+                      className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto"
+                      onMouseDown={handleDropdownMouseDown}
+                      onClick={handleDropdownClick}
+                    >
+                      {filteredMedicines.map((med) => (
+                        <div
+                          key={med.id}
+                          className="px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                          onClick={() => {
+                            handleMedicineSelect(med);
+                            // Close dropdown immediately after selection
+                            setShowMedicineDropdown(false);
+                          }}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-gray-800">{med.name}</span>
+                            <span className="text-sm text-gray-600">₹{med.price.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* No results message */}
+                  {showMedicineDropdown && medicineSearch && filteredMedicines.length === 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                      <div className="px-3 py-2 text-sm text-gray-500">
+                        No medicines found
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="quantity">Quantity</Label>
@@ -427,15 +519,18 @@ export function Billing() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-4 space-x-2">
-                <Button onClick={handleGenerateInvoice} className="bg-blue-600 hover:bg-blue-700">
+            <div className="flex flex-wrap gap-2 pt-4">
+                <Button 
+                  onClick={handleGenerateInvoice} 
+                  className="bg-blue-600 hover:bg-blue-700 flex-1 min-w-[140px]"
+                >
                   <Receipt className="w-4 h-4 mr-2" />
                   Generate Invoice
                 </Button>
                 <Button 
                   onClick={sendBillViaWhatsApp} 
                   disabled={isSendingWhatsApp}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 ml-2"
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 flex-1 min-w-[140px]"
                 >
                   {isSendingWhatsApp ? (
                     <>
@@ -452,7 +547,7 @@ export function Billing() {
                 <Button 
                   onClick={sendBillViaEmail} 
                   disabled={isSendingEmail}
-                  className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400"
+                  className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 flex-1 min-w-[140px]"
                 >
                   {isSendingEmail ? (
                     <>
