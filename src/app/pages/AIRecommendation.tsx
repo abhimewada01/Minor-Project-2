@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -112,6 +113,7 @@ const symptomDatabase: Record<string, Recommendation[]> = {
 };
 
 export function AIRecommendation() {
+  const navigate = useNavigate();
   const [symptoms, setSymptoms] = useState('');
   const [disease, setDisease] = useState('');
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
@@ -142,6 +144,17 @@ export function AIRecommendation() {
       setRecommendations(results);
       setIsLoading(false);
     }, 1500);
+  };
+
+  const handleAddToBill = (recommendation: Recommendation) => {
+    const medicine = {
+      transferId: `${recommendation.id}-${Date.now()}`,
+      name: `${recommendation.medicineName} ${recommendation.dosage}`.trim(),
+      price: recommendation.price,
+    };
+
+    localStorage.setItem("pendingBillMedicine", JSON.stringify(medicine));
+    navigate("/dashboard/billing", { state: { medicine } });
   };
 
   return (
@@ -301,7 +314,12 @@ export function AIRecommendation() {
 
                       <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
                         <span className="text-lg font-semibold text-gray-800">₹{rec.price.toFixed(2)}</span>
-                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                        <Button
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700"
+                          onClick={() => handleAddToBill(rec)}
+                          disabled={rec.availability === 'Out of Stock'}
+                        >
                           Add to Bill
                         </Button>
                       </div>

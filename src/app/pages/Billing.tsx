@@ -6,6 +6,7 @@ import {
   KeyboardEvent,
   MouseEvent as ReactMouseEvent,
 } from "react";
+import { useLocation } from "react-router";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -50,6 +51,12 @@ interface Medicine {
   price: number;
 }
 
+interface PendingBillMedicine {
+  transferId?: string;
+  name: string;
+  price: number;
+}
+
 const availableMedicines: Medicine[] = [
   { id: "med1", name: "Paracetamol 500mg", price: 207.5 },
   { id: "med2", name: "Amoxicillin 250mg", price: 415.0 },
@@ -61,7 +68,15 @@ const availableMedicines: Medicine[] = [
   { id: "med8", name: "Cetirizine 10mg", price: 166.0 },
 ];
 
+const elevatedCardClass =
+  "rounded-2xl border border-white/70 bg-gradient-to-br from-white via-white to-blue-50/70 shadow-[0_18px_45px_rgba(15,23,42,0.10)] backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(37,99,235,0.16)]";
+const summaryCardClass =
+  "rounded-2xl border border-white/70 bg-gradient-to-br from-white via-blue-50/80 to-indigo-50/80 shadow-[0_22px_55px_rgba(15,23,42,0.14)] backdrop-blur transition-all duration-300";
+const softPanelClass =
+  "rounded-2xl border border-blue-100/80 bg-gradient-to-br from-blue-50 via-white to-cyan-50 shadow-inner";
+
 export function Billing() {
+  const location = useLocation();
   const [billItems, setBillItems] = useState<BillItem[]>([]);
   const [patientName, setPatientName] = useState("");
   const [patientContact, setPatientContact] = useState("");
@@ -75,6 +90,9 @@ export function Billing() {
   const [prescriptionFile, setPrescriptionFile] = useState<string | null>(null);
   const [isSendingWhatsApp, setIsSendingWhatsApp] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+
+  const normalizeMedicineName = (name: string) =>
+    name.toLowerCase().replace(/\s+/g, " ").trim();
 
   // Generate invoice data
   const generateInvoiceData = () => {
@@ -141,18 +159,78 @@ export function Billing() {
     setTimeout(() => setShowMedicineDropdown(false), 200);
   };
 
-  // Handle dropdown toggle
-  const toggleDropdown = () => {
-    setShowMedicineDropdown(!showMedicineDropdown);
-  };
-
   const findMedicineBySearch = (search: string): Medicine | null => {
     if (!search || search.trim() === "") return null;
+    const normalizedSearch = normalizeMedicineName(search);
     const match = availableMedicines.find(
-      (m) => m.name.toLowerCase() === search.trim().toLowerCase(),
+      (m) =>
+        normalizeMedicineName(m.name) === normalizedSearch ||
+        normalizeMedicineName(m.name).includes(normalizedSearch) ||
+        normalizedSearch.includes(normalizeMedicineName(m.name)),
     );
     return match || null;
   };
+
+  const addMedicineToBill = (medicine: Medicine, itemQuantity = quantity) => {
+    const safeQuantity = Math.max(1, Number(itemQuantity) || 1);
+    const newItem: BillItem = {
+      id: Date.now(),
+      medicineName: medicine.name,
+      quantity: safeQuantity,
+      price: medicine.price,
+      total: medicine.price * safeQuantity,
+    };
+
+    setBillItems((prev) => [...prev, newItem]);
+    setSelectedMedicine(null);
+    setMedicineSearch("");
+    setQuantity(1);
+    setShowMedicineDropdown(false);
+  };
+
+  useEffect(() => {
+    const stateMedicine = (
+      location.state as { medicine?: PendingBillMedicine } | null
+    )?.medicine;
+    const storedMedicine = localStorage.getItem("pendingBillMedicine");
+    let storedPendingMedicine: PendingBillMedicine | null = null;
+
+    if (storedMedicine) {
+      try {
+        storedPendingMedicine = JSON.parse(storedMedicine) as PendingBillMedicine;
+      } catch {
+        localStorage.removeItem("pendingBillMedicine");
+      }
+    }
+
+    const pendingMedicine = stateMedicine || storedPendingMedicine;
+
+    if (!pendingMedicine?.name) return;
+
+    const transferId =
+      pendingMedicine.transferId ||
+      `${pendingMedicine.name}-${pendingMedicine.price}`;
+    const processedTransferId = sessionStorage.getItem(
+      "processedBillMedicineTransfer",
+    );
+
+    if (processedTransferId === transferId) {
+      localStorage.removeItem("pendingBillMedicine");
+      return;
+    }
+
+    const matchedMedicine = findMedicineBySearch(pendingMedicine.name);
+    addMedicineToBill(
+      matchedMedicine || {
+        id: `ai-${Date.now()}`,
+        name: pendingMedicine.name,
+        price: Number(pendingMedicine.price) || 0,
+      },
+      1,
+    );
+    sessionStorage.setItem("processedBillMedicineTransfer", transferId);
+    localStorage.removeItem("pendingBillMedicine");
+  }, [location.state]);
 
   const handleMedicineInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -179,11 +257,6 @@ export function Billing() {
     };
   }, [showMedicineDropdown]);
 
-  // Prevent dropdown close on click
-  const handleDropdownMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
-    e.preventDefault();
-  };
-
   // Handle click inside dropdown so input blur doesn't close it prematurely
   const handleDropdownClick = (e: ReactMouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
@@ -203,19 +276,7 @@ export function Billing() {
       }
     }
 
-    const newItem: BillItem = {
-      id: Date.now(),
-      medicineName: medicineToAdd.name,
-      quantity: quantity,
-      price: medicineToAdd.price,
-      total: medicineToAdd.price * quantity,
-    };
-
-    setBillItems((prev) => [...prev, newItem]);
-    setSelectedMedicine(null);
-    setMedicineSearch("");
-    setQuantity(1);
-    setShowMedicineDropdown(false);
+    addMedicineToBill(medicineToAdd);
   };
 
   const handleRemoveItem = (id: number) => {
@@ -233,10 +294,18 @@ export function Billing() {
   const discountAmount = (subtotal * discount) / 100;
   const tax = (subtotal - discountAmount) * 0.1; // 10% tax
   const total = subtotal - discountAmount + tax;
+  const invoicePatientName = patientName.trim() || "Walk-in Patient";
+  const contactValue = patientContact.trim();
+  const invoicePatientContact = contactValue || "Not provided";
+  const isEmailContact = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactValue);
+  const isPhoneContact =
+    /^[+\d\s()-]+$/.test(contactValue) &&
+    contactValue.replace(/\D/g, "").length >= 10 &&
+    contactValue.replace(/\D/g, "").length <= 15;
 
   const generatePDFInvoice = async () => {
-    if (!patientName || billItems.length === 0) {
-      alert("Please add patient name and at least one medicine");
+    if (billItems.length === 0) {
+      alert("Please add at least one medicine before generating invoice");
       return;
     }
 
@@ -262,8 +331,24 @@ export function Billing() {
 
     // Set up PDF dimensions and margins
     const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 20;
+    const contentRight = pageWidth - margin;
+    const medicineX = margin + 25;
+    const qtyX = contentRight - 68;
+    const priceX = contentRight - 34;
+    const totalX = contentRight;
+    const medicineMaxWidth = qtyX - medicineX - 10;
     let yPosition = margin;
+
+    const formatCurrency = (value: number) => `INR ${Number(value).toFixed(2)}`;
+
+    const addPageIfNeeded = (requiredHeight = 10) => {
+      if (yPosition + requiredHeight > pageHeight - margin) {
+        pdf.addPage();
+        yPosition = margin;
+      }
+    };
 
     // Header
     pdf.setFont("helvetica", "bold");
@@ -290,9 +375,9 @@ export function Billing() {
     pdf.text("Patient Details:", margin, yPosition);
     yPosition += 7;
     pdf.setFont("helvetica", "normal");
-    pdf.text("Name: " + patientName, margin, yPosition);
+    pdf.text("Name: " + invoicePatientName, margin, yPosition);
     yPosition += 6;
-    pdf.text("Contact: " + patientContact, margin, yPosition);
+    pdf.text("Contact: " + invoicePatientContact, margin, yPosition);
     yPosition += 12;
 
     // Table headers
@@ -303,51 +388,52 @@ export function Billing() {
     pdf.setFontSize(10);
     pdf.text("S.No", margin, yPosition);
     pdf.text("Medicine Name", margin + 25, yPosition);
-    pdf.text("Qty", margin + 120, yPosition);
-    pdf.text("Price", margin + 160, yPosition);
-    pdf.text("Total", margin + 190, yPosition);
+    pdf.text("Qty", qtyX, yPosition, { align: "center" });
+    pdf.text("Price", priceX, yPosition, { align: "right" });
+    pdf.text("Total", totalX, yPosition, { align: "right" });
     yPosition += 6;
 
     // Draw line under header
-    pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+    pdf.line(margin, yPosition, contentRight, yPosition);
     yPosition += 7;
 
     // Table data - Safe rendering
     pdf.setFont("helvetica", "normal");
     billItems.forEach((item, index) => {
-      if (yPosition > 240) {
-        pdf.addPage();
-        yPosition = margin;
-      }
+      const medicineLines = pdf.splitTextToSize(
+        String(item.medicineName),
+        medicineMaxWidth,
+      );
+      const rowHeight = Math.max(7, medicineLines.length * 5);
+      addPageIfNeeded(rowHeight + 4);
 
       // Serial number
       pdf.text(String(index + 1), margin, yPosition);
 
       // Medicine name
-      pdf.text(String(item.medicineName), margin + 25, yPosition);
+      pdf.text(medicineLines, medicineX, yPosition);
 
       // Quantity (center aligned)
-      const quantityStr = String(item.quantity);
-      const quantityWidth = pdf.getTextWidth(quantityStr);
-      pdf.text(quantityStr, margin + 120 - quantityWidth / 2, yPosition);
+      pdf.text(String(item.quantity), qtyX, yPosition, { align: "center" });
 
       // Price (right aligned) - Safe ASCII formatting
-      const priceStr = "INR " + Number(item.price).toFixed(2);
-      const priceWidth = pdf.getTextWidth(priceStr);
-      pdf.text(priceStr, margin + 170 - priceWidth, yPosition);
+      pdf.text(formatCurrency(item.price), priceX, yPosition, {
+        align: "right",
+      });
 
       // Total (right aligned) - Safe ASCII formatting
-      const totalStr = "INR " + Number(item.total).toFixed(2);
-      const totalWidth = pdf.getTextWidth(totalStr);
-      pdf.text(totalStr, margin + 200 - totalWidth, yPosition);
+      pdf.text(formatCurrency(item.total), totalX, yPosition, {
+        align: "right",
+      });
 
-      yPosition += 6;
+      yPosition += rowHeight;
     });
 
     // Draw line after items
     yPosition += 5;
-    pdf.line(margin, yPosition, pageWidth - margin, yPosition);
+    pdf.line(margin, yPosition, contentRight, yPosition);
     yPosition += 10;
+    addPageIfNeeded(40);
 
     // Summary - Safe rendering
     pdf.setFont("helvetica", "bold");
@@ -357,36 +443,33 @@ export function Billing() {
     pdf.setFont("helvetica", "normal");
 
     // Subtotal
-    const subtotalStr = "Subtotal: INR " + Number(subtotal).toFixed(2);
-    const subtotalWidth = pdf.getTextWidth(subtotalStr);
-    pdf.text(subtotalStr, margin + 190 - subtotalWidth, yPosition);
+    const subtotalStr = "Subtotal: " + formatCurrency(subtotal);
+    pdf.text(subtotalStr, contentRight, yPosition, { align: "right" });
     yPosition += 6;
 
     // Discount
     const discountStr =
       "Discount (" +
       Number(discount).toFixed(0) +
-      "%): INR " +
-      Number(discountAmount).toFixed(2);
-    const discountWidth = pdf.getTextWidth(discountStr);
-    pdf.text(discountStr, margin + 190 - discountWidth, yPosition);
+      "%): " +
+      formatCurrency(discountAmount);
+    pdf.text(discountStr, contentRight, yPosition, { align: "right" });
     yPosition += 6;
 
     // Tax
-    const taxStr = "Tax (10%): INR " + Number(tax).toFixed(2);
-    const taxWidth = pdf.getTextWidth(taxStr);
-    pdf.text(taxStr, margin + 190 - taxWidth, yPosition);
+    const taxStr = "Tax (10%): " + formatCurrency(tax);
+    pdf.text(taxStr, contentRight, yPosition, { align: "right" });
     yPosition += 6;
 
     // Total Amount
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(12);
-    const totalStr = "Total Amount: INR " + Number(total).toFixed(2);
-    const totalWidth = pdf.getTextWidth(totalStr);
-    pdf.text(totalStr, margin + 190 - totalWidth, yPosition);
+    const totalStr = "Total Amount: " + formatCurrency(total);
+    pdf.text(totalStr, contentRight, yPosition, { align: "right" });
     yPosition += 12;
 
     // Footer
+    addPageIfNeeded(14);
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
     pdf.text(
@@ -405,7 +488,11 @@ export function Billing() {
 
     // Save PDF
     const fileName =
-      "Invoice_" + billNumber + "_" + patientName.replace(/\s+/g, "_") + ".pdf";
+      "Invoice_" +
+      billNumber +
+      "_" +
+      invoicePatientName.replace(/\s+/g, "_") +
+      ".pdf";
     pdf.save(fileName);
 
     // Show success message
@@ -428,9 +515,9 @@ export function Billing() {
   };
 
   const sendBillViaWhatsApp = async () => {
-    if (!patientName || !patientContact || billItems.length === 0) {
+    if (!isPhoneContact || billItems.length === 0) {
       alert(
-        "Please add patient name, phone number, and at least one medicine before sending via WhatsApp",
+        "Please add a phone number and at least one medicine before sending via WhatsApp",
       );
       return;
     }
@@ -446,7 +533,7 @@ export function Billing() {
       const billData = {
         billNumber: `INV-${Date.now().toString().slice(-6)}`,
         date: new Date().toISOString().split("T")[0],
-        patientName,
+        patientName: invoicePatientName,
         patientPhone: patientContact,
         items: billItems.map((item) => ({
           medicineName: item.medicineName,
@@ -503,9 +590,9 @@ export function Billing() {
   };
 
   const sendBillViaEmail = async () => {
-    if (!patientName || !patientContact || billItems.length === 0) {
+    if (!isEmailContact || billItems.length === 0) {
       alert(
-        "Please add patient name, email, and at least one medicine before sending via email",
+        "Please add an email address and at least one medicine before sending via email",
       );
       return;
     }
@@ -521,7 +608,7 @@ export function Billing() {
       const billData = {
         billNumber: `INV-${Date.now().toString().slice(-6)}`,
         date: new Date().toISOString().split("T")[0],
-        patientName,
+        patientName: invoicePatientName,
         patientPhone: patientContact,
         items: billItems.map((item) => ({
           medicineName: item.medicineName,
@@ -570,7 +657,7 @@ export function Billing() {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-4 sm:py-8"
+      className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_34%),linear-gradient(135deg,#f8fbff_0%,#eef6ff_45%,#f7f7ff_100%)] py-4 sm:py-8"
       style={{ overflowX: "hidden" }}
     >
       <div
@@ -593,7 +680,7 @@ export function Billing() {
 
         <div
           className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6 lg:gap-8"
-          style={{ maxWidth: "100%", overflow: "hidden" }}
+          style={{ maxWidth: "100%", overflow: "visible" }}
         >
           {/* Left Column - Bill Creation */}
           <div
@@ -602,7 +689,7 @@ export function Billing() {
           >
             {/* Patient Information */}
             <Card
-              className="p-4 sm:p-6 shadow-lg border-0 bg-white"
+              className={`p-4 sm:p-6 ${elevatedCardClass}`}
               style={{
                 maxWidth: "100%",
                 overflow: "visible",
@@ -636,11 +723,11 @@ export function Billing() {
                     htmlFor="patientContact"
                     className="text-sm font-medium text-gray-700"
                   >
-                    Contact Number
+                    Phone Number or Email
                   </Label>
                   <Input
                     id="patientContact"
-                    placeholder="+91 98765-43210"
+                    placeholder="+91 98765-43210 or patient@gmail.com"
                     value={patientContact}
                     onChange={(e) => setPatientContact(e.target.value)}
                     className="h-10 sm:h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500 text-sm sm:text-base"
@@ -651,10 +738,10 @@ export function Billing() {
 
             {/* Upload Prescription */}
             <Card
-              className="p-4 sm:p-6 shadow-lg border-0 bg-white"
+              className={`p-4 sm:p-6 ${elevatedCardClass}`}
               style={{
                 maxWidth: "100%",
-                overflow: "hidden",
+                overflow: "visible",
                 boxSizing: "border-box",
               }}
             >
@@ -670,7 +757,7 @@ export function Billing() {
               >
                 <label
                   htmlFor="prescription"
-                  className="flex items-center space-x-2 px-4 py-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg cursor-pointer transition-colors flex-shrink-0"
+                  className="flex items-center space-x-2 px-4 py-3 bg-gradient-to-r from-blue-50 to-cyan-50 hover:from-blue-100 hover:to-cyan-100 border border-blue-200 rounded-2xl cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md flex-shrink-0"
                 >
                   <Upload className="w-5 h-5 text-blue-600" />
                   <span className="text-sm font-medium text-blue-700">
@@ -686,7 +773,7 @@ export function Billing() {
                 />
                 {prescriptionFile && (
                   <div
-                    className="flex items-center space-x-2 text-sm bg-green-50 px-3 py-2 rounded-lg flex-shrink-0"
+                    className="flex items-center space-x-2 text-sm bg-gradient-to-r from-green-50 to-emerald-50 px-3 py-2 rounded-2xl shadow-inner flex-shrink-0"
                     style={{ overflow: "hidden" }}
                   >
                     <FileText className="w-4 h-4 text-green-600 flex-shrink-0" />
@@ -706,10 +793,10 @@ export function Billing() {
 
             {/* Add Medicines */}
             <Card
-              className="p-4 sm:p-6 shadow-lg border-0 bg-white"
+              className={`p-4 sm:p-6 ${elevatedCardClass}`}
               style={{
                 maxWidth: "100%",
-                overflow: "hidden",
+                overflow: "visible",
                 boxSizing: "border-box",
               }}
             >
@@ -721,7 +808,7 @@ export function Billing() {
               </div>
               <div
                 className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6"
-                style={{ maxWidth: "100%", overflow: "hidden" }}
+                style={{ maxWidth: "100%", overflow: "visible" }}
               >
                 <div className="space-y-2 lg:col-span-2">
                   <Label
@@ -744,26 +831,33 @@ export function Billing() {
                       onKeyDown={handleMedicineInputKeyDown}
                       className="pl-10 pr-10 h-10 sm:h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500 text-sm sm:text-base"
                     />
-                    <ChevronDown
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 cursor-pointer"
+                    <button
+                      type="button"
+                      aria-label="Show medicines"
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() =>
-                        setShowMedicineDropdown(!showMedicineDropdown)
+                        setShowMedicineDropdown((isOpen) => !isOpen)
                       }
-                    />
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-600"
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </button>
 
                     {/* Medicine Dropdown */}
                     {showMedicineDropdown && (
                       <div
-                        className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] max-h-60 overflow-y-auto"
-                        onMouseDown={handleDropdownMouseDown}
+                        className="absolute top-full left-0 right-0 mt-2 bg-white/95 border border-blue-100 rounded-2xl shadow-[0_20px_45px_rgba(15,23,42,0.16)] backdrop-blur z-[9999] max-h-60 overflow-y-auto"
                         onClick={handleDropdownClick}
                       >
                         {filteredMedicines.length > 0 ? (
                           filteredMedicines.map((med) => (
                             <div
                               key={med.id}
-                              className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                              onClick={() => handleMedicineSelect(med)}
+                              className="px-4 py-3 hover:bg-blue-50/80 cursor-pointer border-b border-blue-50 last:border-b-0 transition-colors"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleMedicineSelect(med);
+                              }}
                             >
                               <div className="flex justify-between items-center">
                                 <span className="text-sm font-medium text-gray-800">
@@ -822,7 +916,7 @@ export function Billing() {
             {/* Bill Items Table */}
             {billItems.length > 0 && (
               <Card
-                className="p-4 sm:p-6 shadow-lg border-0 bg-white"
+                className={`p-4 sm:p-6 ${elevatedCardClass}`}
                 style={{
                   maxWidth: "100%",
                   overflow: "hidden",
@@ -927,7 +1021,7 @@ export function Billing() {
             style={{ maxWidth: "100%", overflow: "hidden" }}
           >
             <Card
-              className="p-4 sm:p-5 sticky top-6"
+              className={`p-4 sm:p-5 sticky top-6 ${summaryCardClass}`}
               style={{
                 maxWidth: "100%",
                 overflow: "hidden",
@@ -996,60 +1090,60 @@ export function Billing() {
               <div className="flex flex-col sm:flex-wrap gap-2 sm:gap-3 pt-4">
                 <Button
                   onClick={generatePDFInvoice}
-                  className="w-full sm:flex-1 bg-blue-600 hover:bg-blue-700 h-10 sm:h-11 font-medium text-sm sm:text-base min-w-[120px]"
-                  disabled={!patientName || billItems.length === 0}
+                  className="w-full sm:flex-1 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg shadow-blue-600/25 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-600/30 h-10 sm:h-11 font-medium text-sm sm:text-base min-w-[120px] transition-all duration-300"
+                  disabled={billItems.length === 0}
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Generate Invoice
                 </Button>
-                <Button
-                  onClick={sendBillViaWhatsApp}
-                  disabled={
-                    isSendingWhatsApp || !patientName || billItems.length === 0
-                  }
-                  className="w-full sm:flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-400 h-10 sm:h-11 font-medium text-sm sm:text-base min-w-[120px]"
-                >
-                  {isSendingWhatsApp ? (
-                    <>
-                      <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <MessageCircle className="w-4 h-4 mr-2" />
-                      WhatsApp
-                    </>
-                  )}
-                </Button>
-                <Button
-                  onClick={sendBillViaEmail}
-                  disabled={
-                    isSendingEmail || !patientName || billItems.length === 0
-                  }
-                  className="w-full sm:flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 h-10 sm:h-11 font-medium text-sm sm:text-base min-w-[120px]"
-                >
-                  {isSendingEmail ? (
-                    <>
-                      <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="w-4 h-4 mr-2" />
-                      Email
-                    </>
-                  )}
-                </Button>
+                {isPhoneContact && (
+                  <Button
+                    onClick={sendBillViaWhatsApp}
+                    disabled={isSendingWhatsApp || billItems.length === 0}
+                    className="w-full sm:flex-1 rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-green-400 disabled:to-emerald-400 shadow-lg shadow-green-600/25 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-green-600/30 h-10 sm:h-11 font-medium text-sm sm:text-base min-w-[120px] transition-all duration-300"
+                  >
+                    {isSendingWhatsApp ? (
+                      <>
+                        <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle className="w-4 h-4 mr-2" />
+                        WhatsApp
+                      </>
+                    )}
+                  </Button>
+                )}
+                {isEmailContact && (
+                  <Button
+                    onClick={sendBillViaEmail}
+                    disabled={isSendingEmail || billItems.length === 0}
+                    className="w-full sm:flex-1 rounded-2xl bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-700 hover:to-fuchsia-700 disabled:from-purple-400 disabled:to-fuchsia-400 shadow-lg shadow-purple-600/25 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-purple-600/30 h-10 sm:h-11 font-medium text-sm sm:text-base min-w-[120px] transition-all duration-300"
+                  >
+                    {isSendingEmail ? (
+                      <>
+                        <div className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="w-4 h-4 mr-2" />
+                        Email
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
 
               <Button
                 variant="outline"
-                className="w-full h-10 sm:h-11 text-sm sm:text-base"
+                className="w-full h-10 sm:h-11 rounded-2xl border-blue-100 bg-white/70 text-sm sm:text-base shadow-sm backdrop-blur hover:-translate-y-0.5 hover:bg-blue-50 hover:shadow-md transition-all duration-300"
               >
                 Save as Draft
               </Button>
 
-              <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+              <div className={`mt-4 p-3 ${softPanelClass}`}>
                 <p className="text-xs text-blue-800">
                   <strong>Note:</strong> Invoice will be automatically saved and
                   can be printed or shared via email.
